@@ -14,22 +14,18 @@
  * limitations under the License.
  */
 
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
+use crate::ffi::{
+    fts5_api, fts5_tokenizer, mecab_destroy, mecab_dictionary_info, mecab_new2,
+    mecab_sparse_tonode2, mecab_strerror, mecab_t, sqlite3, sqlite3_api, sqlite3_api_routines,
+    sqlite3_stmt, Fts5Tokenizer, MECAB_BOS_NODE, MECAB_EON_NODE, MECAB_EOS_NODE, MECAB_NOR_NODE,
+    MECAB_UNK_NODE, SQLITE_ERROR, SQLITE_OK,
+};
 use std::ffi::{c_char, c_int, c_uchar, c_uint, c_void, CStr, CString};
 use std::fmt::{Display, Formatter};
 use std::ptr::null_mut;
 use tracing::{debug, info, warn};
 
-// https://www.sqlite.org/loadext.html#programming_loadable_extensions
-// SQLITE_EXTENSION_INIT1
-// https://github.com/rusqlite/rusqlite/issues/524
-#[no_mangle]
-pub static mut sqlite3_api: *mut sqlite3_api_routines = null_mut();
+mod ffi;
 
 /// An extension loading entry point.
 ///
@@ -38,8 +34,8 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = null_mut();
 #[tracing::instrument(skip_all)]
 pub unsafe extern "C" fn sqlite3_ftsmecabrs_init(
     db: *mut sqlite3,
-    pzErrMsg: *mut *mut c_char,
-    pApi: *const sqlite3_api_routines,
+    #[allow(non_snake_case)] pzErrMsg: *mut *mut c_char,
+    #[allow(non_snake_case)] pApi: *const sqlite3_api_routines,
 ) -> c_int {
     if cfg!(feature = "tracing-subscriber") {
         tracing_subscriber::fmt::try_init().ok();
@@ -142,9 +138,9 @@ impl Drop for TokenizerContext {
 #[tracing::instrument(skip_all)]
 unsafe extern "C" fn create(
     _arg1: *mut c_void,
-    azArg: *mut *const c_char,
-    nArg: c_int,
-    ppOut: *mut *mut Fts5Tokenizer,
+    #[allow(non_snake_case)] azArg: *mut *const c_char,
+    #[allow(non_snake_case)] nArg: c_int,
+    #[allow(non_snake_case)] ppOut: *mut *mut Fts5Tokenizer,
 ) -> c_int {
     // called per table.
     info!("create");
@@ -190,7 +186,6 @@ unsafe extern "C" fn create(
         info!(?filename, ?charset, %size, %version);
         dic_info = (*dic_info).next;
     }
-    drop(dic_info);
 
     *ppOut = Box::into_raw(context).cast();
 
@@ -212,11 +207,11 @@ unsafe extern "C" fn delete(arg1: *mut Fts5Tokenizer) {
 #[tracing::instrument(skip_all)]
 unsafe extern "C" fn tokenize(
     arg1: *mut Fts5Tokenizer,
-    pCtx: *mut c_void,
+    #[allow(non_snake_case)] pCtx: *mut c_void,
     flags: c_int,
-    pText: *const c_char,
-    nText: c_int,
-    xToken: Option<
+    #[allow(non_snake_case)] pText: *const c_char,
+    #[allow(non_snake_case)] nText: c_int,
+    #[allow(non_snake_case)] xToken: Option<
         unsafe extern "C" fn(
             pCtx: *mut c_void,
             tflags: c_int,
