@@ -24,7 +24,7 @@ use libc::{c_char, c_int, c_uchar, c_uint};
 use std::ffi::{c_void, CStr, CString};
 use std::fmt::{Display, Formatter};
 use std::ptr::null_mut;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 // https://www.sqlite.org/loadext.html#programming_loadable_extensions
 // SQLITE_EXTENSION_INIT1
@@ -36,6 +36,7 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = null_mut();
 ///
 /// https://www.sqlite.org/loadext.html#programming_loadable_extensions
 #[no_mangle]
+#[tracing::instrument(skip_all)]
 pub unsafe extern "C" fn sqlite3_ftsmecabrs_init(
     db: *mut sqlite3,
     pzErrMsg: *mut *mut c_char,
@@ -45,7 +46,7 @@ pub unsafe extern "C" fn sqlite3_ftsmecabrs_init(
         tracing_subscriber::fmt::try_init().ok();
     }
 
-    info!("sqlite3_ftsmecabrs_init hello!");
+    info!("hello");
 
     // SQLITE_EXTENSION_INIT2(pApi)
     sqlite3_api = pApi.cast_mut();
@@ -53,7 +54,7 @@ pub unsafe extern "C" fn sqlite3_ftsmecabrs_init(
     let fts5api = fts5_api_from_db(db);
 
     if fts5api.is_null() {
-        info!("sqlite3_ftsmecabrs_init null");
+        warn!("failed to initialize the fts5_api");
         let msg = CString::new("libfts_mecab_rs: %s").unwrap();
         *pzErrMsg =
             (*sqlite3_api).mprintf.unwrap()(msg.as_ptr(), (*sqlite3_api).errmsg.unwrap()(db));
@@ -102,9 +103,10 @@ unsafe fn fts5_api_from_db(db: *mut sqlite3) -> *mut fts5_api {
         (*sqlite3_api).prepare.unwrap()(db, sql.as_ptr(), -1, &mut statement.0, null_mut());
 
     if ret_prepare as u32 != SQLITE_OK {
-        info!(%ret_prepare, "prepare failed");
+        warn!(%ret_prepare, "prepare failed");
         return null_mut();
     };
+
     let mut fts5api = null_mut();
     let arg4 = CString::new("fts5_api_ptr").unwrap();
     (*sqlite3_api).bind_pointer.unwrap()(
@@ -125,7 +127,7 @@ struct TokenizerContext {
 
 impl Drop for TokenizerContext {
     fn drop(&mut self) {
-        info!("Drop TokenizerContext");
+        debug!("drop TokenizerContext");
 
         if !self.mecab.is_null() {
             unsafe {
@@ -150,7 +152,7 @@ unsafe extern "C" fn create(
 
     for i in 0..nArg {
         let value = CStr::from_ptr(*azArg.offset(i as isize));
-        info!(%i, ?value);
+        debug!(%i, ?value);
     }
 
     // let fts5api = arg1.cast::<fts5_api>();
@@ -181,8 +183,9 @@ unsafe extern "C" fn create(
 #[tracing::instrument(skip_all)]
 unsafe extern "C" fn delete(arg1: *mut Fts5Tokenizer) {
     // called per table.
-    info!("delete");
-    let _ = Box::from_raw(arg1.cast::<TokenizerContext>());
+    let ctx = Box::from_raw(arg1.cast::<TokenizerContext>());
+    drop(ctx);
+    info!("bye");
 }
 
 /// https://www.sqlite.org/fts5.html#custom_tokenizers
@@ -211,16 +214,17 @@ unsafe extern "C" fn tokenize(
 
     let text = CStr::from_ptr(pText);
     let text = text.to_str().unwrap();
-    info!(%text);
+    debug!(%text);
 
     let mut node = mecab_sparse_tonode2((*context).mecab, pText, nText as usize);
 
     if let Err(err) = check((*context).mecab, node.cast()) {
-        info!(?err, "node is null");
+        warn!(?err, "node is null");
         return SQLITE_ERROR as c_int;
     }
 
     // http://taku910.github.io/mecab/libmecab.html
+    // https://github.com/taku910/mecab/blob/046fa78/mecab/example/example.c#L38-L45
     let mut i_start = 0;
     while !node.is_null() {
         let stat = NodeStat::try_from((*node).stat).unwrap();
@@ -244,7 +248,7 @@ unsafe extern "C" fn tokenize(
             CString::from_vec_unchecked(buf)
         };
         let surface_str = surface.to_str().unwrap();
-        info!(%stat, %feature, %length, ?surface_str);
+        debug!(%stat, %feature, %length, ?surface_str);
 
         let ret = x_token(pCtx, 0, surface.as_ptr(), length, i_start, i_start + length);
 
