@@ -255,6 +255,7 @@ unsafe extern "C" fn tokenize(
         let feature = CStr::from_ptr((*node).feature);
         let feature = feature.to_str().unwrap();
         let surface = {
+            // for non null terminated string.
             let mut buf = Vec::<u8>::with_capacity(length as usize);
             let surface_ptr = (*node).surface;
             for i in 0..length {
