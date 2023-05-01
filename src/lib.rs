@@ -20,8 +20,7 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use libc::{c_char, c_int, c_uchar, c_uint};
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_char, c_int, c_uchar, c_uint, c_void, CStr, CString};
 use std::fmt::{Display, Formatter};
 use std::ptr::null_mut;
 use tracing::{debug, info, warn};
@@ -142,7 +141,7 @@ impl Drop for TokenizerContext {
 /// https://www.sqlite.org/fts5.html#custom_tokenizers
 #[tracing::instrument(skip_all)]
 unsafe extern "C" fn create(
-    arg1: *mut c_void,
+    _arg1: *mut c_void,
     azArg: *mut *const c_char,
     nArg: c_int,
     ppOut: *mut *mut Fts5Tokenizer,
@@ -155,9 +154,30 @@ unsafe extern "C" fn create(
         debug!(%i, ?value);
     }
 
-    // let fts5api = arg1.cast::<fts5_api>();
+    let dic_path = 'dic: {
+        let dic_path = match std::env::var("FTS_MECAB_DIC") {
+            Ok(data) => data,
+            Err(_) => break 'dic None,
+        };
+        match std::fs::metadata(&dic_path) {
+            Ok(_) => {
+                info!(%dic_path, "use dictionary");
+                Some(dic_path)
+            }
+            Err(_) => {
+                warn!(%dic_path, "dictionary not found");
+                None
+            }
+        }
+    };
+
+    let mecab_arg = match dic_path {
+        Some(data) => CString::new(format!("-d {}", data)).unwrap(),
+        None => CString::new("").unwrap(),
+    };
+
     let context = Box::new(TokenizerContext {
-        mecab: mecab_new(nArg, azArg.cast()),
+        mecab: mecab_new2(mecab_arg.as_ptr()),
     });
 
     let mut dic_info = mecab_dictionary_info(context.mecab);
